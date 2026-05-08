@@ -79,7 +79,7 @@ def extract_text_from_pdf(uploaded_file):
     return text
 
 def ai_extract_questions(text, filename):
-    """Usa o Llama 3 via Groq para gerar questões"""
+    """Usa o Llama 3.3 via Groq para gerar questões"""
     prompt = f"""
     Você é um professor especialista em concursos. Analise o conteúdo da apostila '{filename}' e extraia ou crie questões de múltipla escolha.
     
@@ -100,14 +100,23 @@ def ai_extract_questions(text, filename):
     
     Conteúdo: {text[:12000]} 
     """
-    # Chamada da API do Groq
+    # CHAMADA ATUALIZADA PARA O MODELO 3.3 (Versão mais estável e atual)
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
-        model="llama-3.1-70b-versatile", # Modelo potente e rápido
-        response_format={"type": "json_object"} # Garante que venha JSON
+        model="llama-3.3-70b-versatile", 
+        response_format={"type": "json_object"} 
     )
     
-    return json.loads(chat_completion.choices[0].message.content)
+    content = chat_completion.choices[0].message.content
+    res = json.loads(content)
+    
+    # O Groq as vezes retorna {"questoes": [...]} em vez de apenas a lista. 
+    # Este bloco garante que sempre teremos a lista de questões.
+    if isinstance(res, dict):
+        for value in res.values():
+            if isinstance(value, list):
+                return value
+    return res
 
 # ==============================================================================
 # 4. INTERFACE DO USUÁRIO (STREAMLIT UI)
@@ -125,7 +134,7 @@ if menu == "🏠 Home":
     
     **Vantagens desta versão:**
     - Processamento quase instantâneo.
-    - Inteligência do Llama 3.
+    - Inteligência do Llama 3.3.
     - Justificativas técnicas precisas.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
@@ -140,13 +149,6 @@ elif menu == "📁 Gerenciar Apostilas":
                 text = extract_text_from_pdf(uploaded_file)
                 questoes = ai_extract_questions(text, uploaded_file.name)
                 
-                # Ajuste caso o Groq retorne um dicionário com a lista dentro
-                if isinstance(questoes, dict):
-                    for key in questoes:
-                        if isinstance(questoes[key], list):
-                            questoes = questoes[key]
-                            break
-
                 apostila_id = save_apostila(uploaded_file.name)
                 save_questoes(apostila_id, questoes)
                 st.success(f"Sucesso! {len(questoes)} questões adicionadas ao Hub.")
