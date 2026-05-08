@@ -105,59 +105,15 @@ def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
 init_db()
 st.set_page_config(page_title="Coach AI | Mentor de Concursos", layout="wide", page_icon="🎯")
 
-# Estilização Harmonizada (Light & Clean)
 st.markdown("""
     <style>
-    /* Fundo e Cores Gerais */
-    .stApp {
-        background-color: #F8F9FA;
-        color: #212529;
-    }
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #FFFFFF !important;
-        border-right: 1px solid #E0E0E0;
-    }
-    
-    /* Cartões de Questão */
-    .q-card {
-        background-color: #FFFFFF;
-        padding: 25px;
-        border-radius: 12px;
-        border: 1px solid #E0E0E0;
-        margin-bottom: 20px;
-        color: #212529;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    /* Botões */
-    .stButton>button {
-        background-color: #0056b3 !important; /* Azul Profissional */
-        color: white !important;
-        font-weight: 600 !important;
-        border-radius: 8px !important;
-        border: none !important;
-        transition: 0.2s;
-    }
-    .stButton>button:hover {
-        background-color: #004494 !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-
-    /* Inputs */
-    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-        background-color: #FFFFFF !important;
-        color: #212529 !important;
-        border: 1px solid #CED4DA !important;
-    }
-
-    /* Títulos */
-    h1, h2, h3 {
-        color: #004085 !important;
-        font-weight: 700 !important;
-    }
+    .stApp { background-color: #F8F9FA; color: #212529; }
+    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E0E0E0; }
+    .q-card { background-color: #FFFFFF; padding: 25px; border-radius: 12px; border: 1px solid #E0E0E0; margin-bottom: 20px; color: #212529; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stButton>button { background-color: #0056b3 !important; color: white !important; font-weight: 600 !important; border-radius: 8px !important; border: none !important; transition: 0.2s; }
+    .stButton>button:hover { background-color: #004494 !important; transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input { background-color: #FFFFFF !important; color: #212529 !important; border: 1px solid #CED4DA !important; }
+    h1, h2, h3 { color: #004085 !important; font-weight: 700 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -171,17 +127,10 @@ if menu == "🏠 Home":
     with col1:
         st.markdown("""
         ### Seu Mentor Inteligente para Aprovação.
-        
         O **Coach AI** utiliza inteligência artificial de última geração para criar simulados precisos, 
         analisar seu desempenho e sugerir reforços nos pontos onde você mais erra.
-        
-        **Recursos Principais:**
-        - ⚡ **Simulados Instantâneos:** Gerados com base no seu cargo e concurso.
-        - 📊 **Análise de Dados:** Gráficos de aproveitamento por disciplina.
-        - 📚 **Reforço Inteligente:** Questões focadas nas suas fraquezas.
-        - 📜 **Histórico Completo:** Revise todos os seus testes anteriores.
         """)
-        st.info("💡 **Dica:** Para melhores resultados, especifique bem o nome do cargo (ex: Auditor Fiscal da Receita Federal).")
+        st.info("💡 **Dica:** Para melhores resultados, especifique bem o nome do cargo.")
     with col2:
         st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", use_container_width=True)
 
@@ -226,12 +175,10 @@ elif menu == "🎯 Gerar Simulado":
                         <small style="color: #6c757d;">{q['materia'].upper()}</small><br>
                         <strong style="font-size:1.1em;">Questão {i+1}</strong><br>{q['pergunta']}
                     </div>""", unsafe_allow_html=True)
-                    
                     opcoes_formatadas = [f"{k}) {v}" for k, v in q['opcoes'].items()]
                     resp = st.radio(f"Sua resposta para a Q{i+1}:", options=opcoes_formatadas, key=f"q_{i}")
                     st.session_state.respostas_usuario[i] = resp[0]
                     st.write("")
-                
                 if st.form_submit_button("Finalizar e Analisar Desempenho"):
                     st.session_state.simulado_concluido = True
                     st.rerun()
@@ -246,27 +193,16 @@ elif menu == "🎯 Gerar Simulado":
                     stats[materia]["corretas"] += 1
             
             df_stats = pd.DataFrame([{"Matéria": k, "Aproveitamento": (v["corretas"]/v["total"])*100, "Corretas": v["corretas"], "Total": v["total"], "Status": "Sólido" if (v["corretas"]/v["total"]) >= 0.7 else "Atenção" if (v["corretas"]/v["total"]) >= 0.5 else "Crítico"} for k, v in stats.items()])
-            
             color_map = {"Sólido": "#28a745", "Atenção": "#ffc107", "Crítico": "#dc3545"}
             df_stats['Cor'] = df_stats['Status'].map(color_map)
 
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=df_stats['Matéria'], y=df_stats['Aproveitamento'], marker_color=df_stats['Cor'],
-                text=df_stats['Aproveitamento'].apply(lambda x: f"{x:.1f}%"), textposition='outside',
-                customdata=df_stats[['Corretas', 'Total']],
-                hovertemplate="<b>%{x}</b><br>Aproveitamento: %{y:.1f}%<br>Acertos: %{customdata[0]}/%{customdata[1]}<extra></extra>"
-            ))
+            fig.add_trace(go.Bar(x=df_stats['Matéria'], y=df_stats['Aproveitamento'], marker_color=df_stats['Cor'],
+                                text=df_stats['Aproveitamento'].apply(lambda x: f"{x:.1f}%"), textposition='outside',
+                                customdata=df_stats[['Corretas', 'Total']],
+                                hovertemplate="<b>%{x}</b><br>Aproveitamento: %{y:.1f}%<br>Acertos: %{customdata[0]}/%{customdata[1]}<extra></extra>"))
             fig.add_hline(y=70, line_dash="dash", line_color="#6c757d", annotation_text="Meta (70%)")
-            fig.update_layout(
-                title="Aproveitamento por Matéria (%)", 
-                yaxis=dict(range=[0, 110], gridcolor="#E0E0E0"), 
-                xaxis=dict(gridcolor="#E0E0E0"),
-                template="plotly_white", 
-                showlegend=False, 
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)'
-            )
+            fig.update_layout(title="Aproveitamento por Matéria (%)", yaxis=dict(range=[0, 110]), template="plotly_white", showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
             
             materias_fracas = [m for m, v in stats.items() if (v["corretas"]/v["total"]) < 0.7]
@@ -274,7 +210,8 @@ elif menu == "🎯 Gerar Simulado":
                 st.warning(f"🚨 **Coach AI detectou fraquezas em:** {', '.join(materias_fracas)}")
                 if st.button("Gerar Questões de Reforço Agora! 📚"):
                     with st.spinner("Criando reforço..."):
-                        questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
+                        # CORREÇÃO AQUI: Passando concurso, cargo, qtd e dificuldade (4 argumentos)
+                        questoes_ref = ai_generate_questions(concurso, cargo, 5, "Média")
                         for qr in questoes_ref:
                             st.markdown(f"""<div class="q-card">
                                 <strong style="color:#0056b3;">{qr['materia']} (Reforço)</strong><br>{qr['pergunta']}<br>
