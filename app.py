@@ -11,7 +11,7 @@ try:
 except Exception as e:
     st.error("Erro: Chave de API não encontrada nos Secrets. Por favor, configure a GEMINI_API_KEY nas configurações do Streamlit Cloud.")
 
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModelgenai.GenerativeModel('gemini-pro')
 
 # --- FUNÇÕES DO BANCO DE DADOS ---
 def init_db():
