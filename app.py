@@ -46,4 +46,186 @@ def save_questoes(apostila_id, questoes):
     conn.close()
 
 def get_apostilas_com_contagem():
-    """Retorna as
+    """Retorna as apostilas e a quantidade de questões de cada uma"""
+    conn = sqlite3.connect('hub_concursos.db')
+    query = '''
+        SELECT a.id, a.nome, COUNT(q.id) as total_questoes 
+        FROM apostilas a 
+        LEFT JOIN questoes q ON a.id = q.apostila_id 
+        GROUP BY a.id
+    '''
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+def get_questoes(apostila_id):
+    conn = sqlite3.connect('hub_concursos.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM questoes WHERE apostila_id = ?', (apostila_id,))
+    rows = c.fetchall()
+    conn.close()
+    questoes = []
+    for row in rows:
+        questoes.append({
+            "id": row[0],
+            "pergunta": row[2],
+            "opcoes": json.loads(row[3]),
+            "correta": row[4],
+            "justificativa": row[5]
+        })
+    return questoes
+
+# ==============================================================================
+# 3. PROCESSAMENTO DE DOCUMENTOS E IA (GROQ)
+# ==============================================================================
+def extract_text_from_pdf(uploaded_file):
+    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+    text = ""
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    return text
+
+def ai_extract_questions(text, filename):
+    # Aumentei o limite de texto para 30.000 caracteres para ler mais páginas
+    prompt = f"""
+    Você é um professor especialista em concursos. Analise o conteúdo da apostila '{filename}'.
+    
+    OBJETIVO: Extrair as questões de múltipla escolha presentes no texto. 
+    SE NÃO ENCONTRAR QUESTÕES PRONTAS: Você DEVE criar questões inéditas de múltipla escolha baseadas rigorosamente na teoria do texto.
+
+    REGRAS RÍGIDAS:
+    1. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
+    2. Não escreva nenhuma introdução, comentário ou conclusão.
+    3. A justificativa deve ser curta, técnica e objetiva.
+    
+    Modelo do JSON:
+    [
+      {{
+        "pergunta": "Texto da pergunta",
+        "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+        "correta": "A",
+        "justificativa": "Justificativa técnica e objetiva."
+      }}
+    ]
+    
+    Conteúdo: {text[:30000]} 
+    """
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.3-70b-versatile", 
+        response_format={"type": "json_object"} 
+    )
+    content = chat_completion.choices[0].message.content
+    res = json.loads(content)
+    
+    # Tratamento robusto para extrair a lista de questões do JSON
+    if isinstance(res, dict):
+        for value in res.values():
+            if isinstance(value, list):
+                return value
+        # Se o dicionário tiver apenas uma chave que é a lista
+        if len(res) == 1:
+            key = list(res.keys())[0]
+            if isinstance(res[key], list):
+                return res[key]
+    return res if isinstance(res, list) else []
+
+# ==============================================================================
+# 4. INTERFACE DO USUÁRIO (STREAMLIT UI)
+# ==============================================================================
+init_db()
+st.set_page_config(page_title="Hub de Simulados Groq AI", layout="wide", page_icon="⚡")
+
+st.sidebar.title("🚀 Menu Hub Groq")
+menu = st.sidebar.radio("Navegação", ["🏠 Home", "📁 Gerenciar Apostilas", "📝 Fazer Simulado"])
+
+if menu == "🏠 Home":
+    st.title("⚡ Hub de Simulados Ultra-Rápido")
+    st.markdown("""
+    Bem-vindo ao seu centro de estudos alimentado por **Groq LPU**.
+    
+    **Vantagens desta versão:**
+    - Processamento quase instantâneo.
+    - Inteligência do Llama 3.3.
+    - Justificativas técnicas precisas.
+    """)
+    st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
+
+elif menu == "📁 Gerenciar Apostilas":
+    st.title("📁 Cadastro de Materiais")
+    uploaded_file = st.file_uploader("Subir Nova Apostila (PDF)", type="pdf")
+    
+    if uploaded_file and st.button("Processar e Salvar no Hub"):
+        with st.spinner("Groq está analisando o conteúdo e gerando questões..."):
+            try:
+                text = extract_text_from_pdf(uploaded_file)
+                questoes = ai_extract_questions(text, uploaded_file.name)
+                
+                if not questoes:
+                    st.error("A IA não conseguiu gerar questões para este arquivo. Tente outro PDF.")
+                else:
+                    apostila_id = save_apostila(uploaded_file.name)
+                    save_questoes(apostila_id, questoes)
+                    st.success(f"Sucesso! {len(questoes)} questões foram salvas no Hub.")
+            except Exception as e:
+                st.error(f"Erro ao processar: {e}")
+
+    st.divider()
+    st.subheader("Apostilas Cadastradas")
+    df_apostilas = get_apostilas_com_contagem()
+    if not df_apostilas.empty:
+        # Exibimos a tabela com a contagem de questões para diagnóstico
+        st.table(df_apostilas[['nome', 'total_questoes']].rename(columns={'nome': 'Apostila', 'total_questoes': 'Questões Disponíveis'}))
+    else:
+        st.info("Nenhuma apostila cadastrada.")
+
+elif menu == "📝 Fazer Simulado":
+    st.title("📝 Simulado de Conhecimentos")
+    df_apostilas = get_apostilas_com_contagem()
+    
+    if df_apostilas.empty:
+        st.warning("Cadastre materiais primeiro.")
+    else:
+        lista_nomes = df_apostilas['nome'].tolist()
+        escolha = st.selectbox("Selecione a apostila:", lista_nomes)
+        apostila_id = df_apostilas[df_apostilas['nome'] == escolha]['id'].values[0]
+        
+        qtd_questoes = st.number_input("Quantas questões deseja no simulado?", min_value=1, value=10, step=1)
+        
+        if st.button("Iniciar Simulado"):
+            all_questions = get_questoes(apostila_id)
+            
+            if not all_questions:
+                st.error("Esta apostila não possui questões cadastradas no banco de dados. Tente subir o PDF novamente em 'Gerenciar Apostilas'.")
+            else:
+                random.shuffle(all_questions)
+                final_count = min(len(all_questions), qtd_questoes)
+                if final_count < qtd_questoes:
+                    st.warning(f"A apostila possui apenas {final_count} questões. Usaremos todas.")
+                
+                st.session_state.questoes_simulado = all_questions[:final_count]
+                st.session_state.respostas_usuario = {}
+                st.rerun()
+
+        if 'questoes_simulado' in st.session_state:
+            with st.form("simulado_form"):
+                for i, q in enumerate(st.session_state.questoes_simulado):
+                    st.markdown(f"**Questão {i+1}**")
+                    st.write(q['pergunta'])
+                    resp = st.radio(f"Opção para Q{i+1}:", options=q['opcoes'].keys(), key=f"q_{i}")
+                    st.session_state.respostas_usuario[i] = resp
+                    st.write("---")
+                
+                submitted = st.form_submit_button("Finalizar e Ver Resultados")
+                
+                if submitted:
+                    st.divider()
+                    st.header("✅ Resultado do Simulado")
+                    for i, q in enumerate(st.session_state.questoes_simulado):
+                        user_ans = st.session_state.respostas_usuario.get(i, "Não respondida")
+                        correct_ans = q['correta']
+                        color = "green" if user_ans == correct_ans else "red"
+                        st.markdown(f"**Questão {i+1}**")
+                        st.markdown(f"Sua resposta: :{color}[{user_ans}] | Resposta correta: :green[{correct_ans}]")
+                        st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
+                        st.write("---")
