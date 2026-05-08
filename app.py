@@ -3,12 +3,12 @@ from groq import Groq
 import json
 import sqlite3
 import pandas as pd
-import random
+from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 
 # ==============================================================================
-# 1. CONFIGURAÇÃO de SEGURANÇA E IA (GROQ)
+# 1. CONFIGURAÇÃO DE SEGURANÇA E IA (GROQ)
 # ==============================================================================
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -16,7 +16,7 @@ except Exception as e:
     st.error("⚠️ Erro: Chave de API não encontrada nos Secrets do Streamlit Cloud.")
 
 # ==============================================================================
-# 2. SISTEMA de BANCO de DADOS (Coach AI Database)
+# 2. SISTEMA DE BANCO DE DADOS (Coach AI Database)
 # ==============================================================================
 DB_NAME = 'coach_ai_v3.db'
 
@@ -33,7 +33,6 @@ def init_db():
 def save_simulado(concurso, cargo, dificuldade):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    from datetime import datetime
     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
     c.execute('INSERT INTO simulados (concurso, cargo, dificuldade, data) VALUES (?, ?, ?, ?)', (concurso, cargo, dificuldade, data_atual))
     id_simulado = c.lastrowid
@@ -65,7 +64,7 @@ def get_questoes(simulado_id):
     return [{"id": r[0], "materia": r[2], "pergunta": r[3], "opcoes": json.loads(r[4]), "correta": r[5], "justificativa": r[6]} for r in rows]
 
 # ==============================================================================
-# 3. MOTOR de GERAÇÃO de QUESTÕES (IA GROQ)
+# 3. MOTOR DE GERAÇÃO DE QUESTÕES (IA GROQ)
 # ==============================================================================
 def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
     prompt = f"""
@@ -101,64 +100,118 @@ def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
     return res.get("questoes", [])
 
 # ==============================================================================
-# 4. INTERFACE DO USUÁRIO (COACH AI)
+# 4. INTERFACE DO USUÁRIO (COACH AI - DARK HARMONIZED)
 # ==============================================================================
 init_db()
-st.set_page_config(page_title="Coach AI", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="Coach AI | Mentor de Concursos", layout="wide", page_icon="🎯")
 
-# Estilização Customizada para reforçar o Dark Mode
+# --- ESTILIZAÇÃO AVANÇADA (CSS) ---
 st.markdown("""
     <style>
-    .main {
+    /* Fundo Principal e Sidebar */
+    .stApp {
         background-color: #0E1117;
+        color: #E0E0E0;
     }
+    [data-testid="stSidebar"] {
+        background-color: #161B22 !important;
+        border-right: 1px solid #30363D;
+    }
+    
+    /* Cartões de Questão */
+    .question-card {
+        background-color: #1C2128;
+        padding: 20px;
+        border-radius: 15px;
+        border-left: 5px solid #00FFB2;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* Botões Personalizados */
     .stButton>button {
-        background-color: #00FFB2;
-        color: black;
-        font-weight: bold;
-        border-radius: 10px;
+        background-color: #00FFB2 !important;
+        color: #000 !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
+        border: none !important;
+        transition: 0.3s;
+        width: 100%;
     }
-    .stTextInput>div>div>input, .stSelectbox>div>div>div {
-        background-color: #262730 !important;
+    .stButton>button:hover {
+        background-color: #00D18A !important;
+        transform: scale(1.02);
+    }
+
+    /* Inputs e Selects */
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
+        background-color: #21262D !important;
         color: white !important;
+        border: 1px solid #30363D !important;
+    }
+
+    /* Títulos e Textos */
+    h1, h2, h3 {
+        color: #00FFB2 !important;
+    }
+    .highlight-text {
+        color: #00FFB2;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
 
+# --- SIDEBAR ---
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3413/3413506.png", width=80)
 st.sidebar.title("🚀 Coach AI")
+st.sidebar.markdown("---")
 menu = st.sidebar.radio("Navegação", ["🏠 Home", "🎯 Gerar Simulado", "📜 Histórico"])
 
+# ==============================================================================
+# PÁGINA: HOME
+# ==============================================================================
 if menu == "🏠 Home":
     st.title("🎯 Coach AI")
-    st.markdown("""
-    **Sua inteligência artificial para aprovação em concursos.**
     
-    O **Coach AI** analisa editais, distribui matérias de forma proporcional ao cargo e avalia seu desempenho com dashboards interativos.
-    
-    **Vantagens do Coach AI:**
-    - ⚡ Geração instantânea de questões.
-    - 📊 Análise de desempenho por matéria.
-    - 📚 Reforço automatizado nos seus pontos fracos.
-    - 🎯 Foco total no cargo escolhido.
-    """)
-    st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
-
-elif menu == "🎯 Gerar Simulado":
-    st.title("🎯 Novo Simulado Coach AI")
-    
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([2, 1])
     with col1:
-        concurso = st.text_input("Nome do Concurso", placeholder="Ex: Banco do Brasil, PF...")
-        cargo = st.text_input("Cargo/Função", placeholder="Ex: Escriturário, Agente...")
+        st.markdown("""
+        ### Sua inteligência artificial para aprovação em concursos.
+        
+        O **Coach AI** não é apenas um gerador de perguntas. Ele é um ecossistema de estudos que:
+        - ⚡ **Analisa Editais:** Cria questões baseadas no cargo e nível de dificuldade.
+        - 📊 **Mapeia Lacunas:** Identifica exatamente quais matérias você precisa revisar.
+        - 📚 **Reforço Dinâmico:** Gera questões extras para os seus pontos fracos.
+        - 🎯 **Foco Total:** Simulados personalizados para o seu cargo específico.
+        
+        *Prepare-se com a precisão de quem conhece a banca.*
+        """)
+        st.markdown('<div class="highlight-text">🚀 Comece agora gerando seu primeiro simulado no menu lateral!</div>', unsafe_allow_html=True)
+    
     with col2:
-        dificuldade = st.selectbox("Nível de Dificuldade", ["Fácil", "Média", "Difícil"])
-        qtd_total = st.number_input("Total de Questões", min_value=5, max_value=100, value=10)
+        st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", use_container_width=True)
+
+# ==============================================================================
+# PÁGINA: GERAR SIMULADO
+# ==============================================================================
+elif menu == "🎯 Gerar Simulado":
+    st.title("🎯 Novo Simulado")
+    
+    # Painel de Configuração
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            concurso = st.text_input("Nome do Concurso", placeholder="Ex: Banco do Brasil, PF, Receita Federal...")
+            cargo = st.text_input("Cargo/Função", placeholder="Ex: Escriturário, Agente, Auditor...")
+        with col2:
+            dificuldade = st.selectbox("Nível de Dificuldade", ["Fácil", "Média", "Difícil"])
+            qtd_total = st.number_input("Total de Questões", min_value=5, max_value=100, value=10)
     
     if st.button("Gerar Simulado ⚡"):
         if not concurso or not cargo:
             st.error("Por favor, preencha o Concurso e o Cargo.")
         else:
-            with st.spinner(f"Coach AI analisando edital para {cargo}..."):
+            with st.spinner(f"🤖 Coach AI analisando edital para {cargo}..."):
                 try:
                     questoes = ai_generate_questions(concurso, cargo, qtd_total, dificuldade)
                     if questoes:
@@ -169,27 +222,38 @@ elif menu == "🎯 Gerar Simulado":
                         st.session_state.simulado_concluido = False
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(f"Erro na geração: {e}")
 
+    # EXIBIÇÃO DO SIMULADO
     if 'simulado_atual_id' in st.session_state:
         sim_id = st.session_state.simulado_atual_id
         questoes = get_questoes(sim_id)
         
         if not st.session_state.get('simulado_concluido', False):
+            st.info(f"📝 **Simulado Iniciado:** Responda a todas as questões abaixo.")
+            
             with st.form("simulado_form"):
                 for i, q in enumerate(questoes):
-                    st.markdown(f"**{q['materia']}** | Questão {i+1}")
-                    st.write(q['pergunta'])
+                    # HTML Card para cada questão
+                    st.markdown(f"""<div class="question-card">
+                        <small style="color: #00FFB2;">{q['materia'].upper()}</small>
+                        <h4>Questão {i+1}</h4>
+                        <p>{q['pergunta']}</p>
+                    </div>""", unsafe_allow_html=True)
+                    
                     opcoes_formatadas = [f"{k}) {v}" for k, v in q['opcoes'].items()]
-                    resp = st.radio(f"Escolha a alternativa:", options=opcoes_formatadas, key=f"q_{i}")
+                    resp = st.radio(f"Selecione a alternativa para a Q{i+1}:", options=opcoes_formatadas, key=f"q_{i}")
                     st.session_state.respostas_usuario[i] = resp[0]
-                    st.write("---")
+                    st.markdown("<br>", unsafe_allow_html=True)
                 
-                if st.form_submit_button("Finalizar e Analisar Desempenho"):
+                st.markdown("---")
+                if st.form_submit_button("Finalizar e Analisar Desempenho 📊"):
                     st.session_state.simulado_concluido = True
                     st.rerun()
         else:
+            # DASHBOARD DE RESULTADOS
             st.header("📊 Dashboard de Desempenho")
+            
             stats = {} 
             for i, q in enumerate(questoes):
                 materia = q['materia']
@@ -198,66 +262,100 @@ elif menu == "🎯 Gerar Simulado":
                 if st.session_state.respostas_usuario.get(i) == q['correta']:
                     stats[materia]["corretas"] += 1
             
-            df_stats = pd.DataFrame([{"Matéria": k, "Aproveitamento": (v["corretas"]/v["total"])*100, "Corretas": v["corretas"], "Total": v["total"], "Status": "Sólido" if (v["corretas"]/v["total"]) >= 0.7 else "Atenção" if (v["corretas"]/v["total"]) >= 0.5 else "Crítico"} for k, v in stats.items()])
+            df_stats = pd.DataFrame([
+                {
+                    "Matéria": k, 
+                    "Aproveitamento": (v["corretas"]/v["total"])*100, 
+                    "Corretas": v["corretas"], 
+                    "Total": v["total"], 
+                    "Status": "Sólido" if (v["corretas"]/v["total"]) >= 0.7 else "Atenção" if (v["corretas"]/v["total"]) >= 0.5 else "Crítico"
+                } for k, v in stats.items()])
             
-            color_map = {"Sólido": "#2ecc71", "Atenção": "#f1c40f", "Crítico": "#e74c3c"}
+            # Cores Harmonizadas com o tema Dark
+            color_map = {"Sólido": "#00FFB2", "Atenção": "#F1C40F", "Crítico": "#E74C3C"}
             df_stats['Cor'] = df_stats['Status'].map(color_map)
 
             fig = go.Figure()
             fig.add_trace(go.Bar(
-                x=df_stats['Matéria'], y=df_stats['Aproveitamento'], marker_color=df_stats['Cor'],
-                text=df_stats['Aproveitamento'].apply(lambda x: f"{x:.1f}%"), textposition='outside',
+                x=df_stats['Matéria'], y=df_stats['Aproveitamento'], 
+                marker_color=df_stats['Cor'],
+                text=df_stats['Aproveitamento'].apply(lambda x: f"{x:.1f}%"), 
+                textposition='outside',
                 customdata=df_stats[['Corretas', 'Total']],
                 hovertemplate="<b>%{x}</b><br>Aproveitamento: %{y:.1f}%<br>Acertos: %{customdata[0]}/%{customdata[1]}<extra></extra>"
             ))
-            fig.add_hline(y=70, line_dash="dash", line_color="gray", annotation_text="Meta de Aprovação (70%)")
-            fig.update_layout(title="Aproveitamento por Matéria (%)", yaxis=dict(range=[0, 110]), template="plotly_dark", showlegend=False)
+            fig.add_hline(y=70, line_dash="dash", line_color="#FFFFFF", annotation_text="Meta (70%)")
+            fig.update_layout(
+                title="Aproveitamento por Matéria (%)", 
+                yaxis=dict(range=[0, 110], gridcolor="#30363D"), 
+                xaxis=dict(gridcolor="#30363D"),
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                font_color="white",
+                template="plotly_dark"
+            )
             st.plotly_chart(fig, use_container_width=True)
             
+            # REFORÇOIA
             materias_fracas = [m for m, v in stats.items() if (v["corretas"]/v["total"]) < 0.7]
             if materias_fracas:
                 st.warning(f"🚨 **Coach AI detectou fraquezas em:** {', '.join(materias_fracas)}")
                 if st.button("Gerar Questões de Reforço Agora! 📚"):
-                    st.info("O Coach AI está criando questões focadas nos seus erros...")
-                    ref_materia = " e ".join(materias_fracas)
-                    questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
-                    for qr in questoes_ref:
-                        st.markdown(f"**{qr['materia']}**: {qr['pergunta']}")
-                        st.write(f"Correta: {qr['correta']} | {qr['justificativa']}")
-                        st.write("---")
+                    with st.spinner("Criando material de reforço..."):
+                        ref_materia = " e ".join(materias_fracas)
+                        questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
+                        for qr in questoes_ref:
+                            st.markdown(f"""<div class="question-card">
+                                <b>{qr['materia']} (Reforço)</b><br>{qr['pergunta']}<br>
+                                <span style="color:#00FFB2"><b>Correta: {qr['correta']}</b></span><br>
+                                <i>{qr['justificativa']}</i>
+                            </div>""", unsafe_allow_html=True)
             else:
-                st.success("🌟 Desempenho excelente!")
+                st.success("🌟 Desempenho excelente! Você está no caminho da aprovação!")
 
             st.divider()
-            st.subheader("Revisão Detalhada")
+            st.subheader("🔍 Revisão Detalhada")
             for i, q in enumerate(questoes):
                 user_ans = st.session_state.respostas_usuario.get(i, "N/A")
                 correct = q['correta']
-                color = "green" if user_ans == correct else "red"
-                st.markdown(f"**{q['materia']} | Q{i+1}**")
-                st.markdown(f"Sua resposta: :{color}[{user_ans}] | Correta: :green[{correct}]")
-                st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
-                st.write("---")
+                color = "#00FFB2" if user_ans == correct else "#E74C3C"
+                
+                st.markdown(f"""
+                <div class="question-card" style="border-left-color: {color}">
+                    <b>{q['materia']} | Q{i+1}</b><br>
+                    {q['pergunta']}<br><br>
+                    Sua resposta: <span style="color:{color}">{user_ans}</span> | 
+                    Correta: <span style="color:#00FFB2">{correct}</span><br>
+                    <small><b>✅ Justificativa:</b> {q['justificativa']}</small>
+                </div>
+                """, unsafe_allow_html=True)
             
             if st.button("Sair e Voltar ao Início"):
                 st.session_state.simulado_atual_id = None
                 st.session_state.simulado_concluido = False
                 st.rerun()
 
+# ==============================================================================
+# PÁGINA: HISTÓRICO
+# ==============================================================================
 elif menu == "📜 Histórico":
     st.title("📜 Meus Simulados")
     df = get_simulados()
     if df.empty:
-        st.info("Nenhum simulado registrado.")
+        st.info("Nenhum simulado registrado até agora.")
     else:
         opcoes = df['id'].tolist()
         nomes = [f"ID {id} - {row['concurso']} ({row['cargo']}) - {row['data']}" for id, row in zip(df['id'], df.to_dict('records'))]
         escolha = st.selectbox("Escolha um simulado para revisar:", opcoes, format_func=lambda x: nomes[df[df['id']==x].index[0]])
+        
         if st.button("Revisar Questões"):
             questoes = get_questoes(escolha)
             for i, q in enumerate(questoes):
-                st.markdown(f"**{q['materia']} | Questão {i+1}**")
-                st.write(q['pergunta'])
-                st.markdown(f"**Resposta Correta:** :green[{q['correta']}]")
-                st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
-                st.write("---")
+                st.markdown(f"""
+                <div class="question-card">
+                    <b>{q['materia']} | Questão {i+1}</b><br>
+                    {q['pergunta']}<br><br>
+                    <span style="color:#00FFB2"><b>Resposta Correta: {q['correta']}</b></span><br>
+                    <small><b>✅ Justificativa:</b> {q['justificativa']}</small>
+                </div>
+                """, unsafe_allow_html=True)
