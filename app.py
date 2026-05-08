@@ -1,21 +1,18 @@
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 import PyPDF2
 import json
 import sqlite3
 import pandas as pd
 
 # ==============================================================================
-# 1. CONFIGURAÇÃO DE SEGURANÇA E IA
+# 1. CONFIGURAÇÃO DE SEGURANÇA E IA (GROQ)
 # ==============================================================================
 try:
-    # A chave GEMINI_API_KEY deve ser configurada nos "Secrets" do Streamlit Cloud
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # A chave GROQ_API_KEY deve ser configurada nos "Secrets" do Streamlit Cloud
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("⚠️ Erro: Chave de API não encontrada. Vá em 'Advanced Settings' -> 'Secrets' e adicione: GEMINI_API_KEY = 'SUA_CHAVE'")
-
-# ALTERADO PARA O MODELO PRO (Mais potente e robusto)
-model = genai.GenerativeModel('gemini-1.5-pro')
+    st.error("⚠️ Erro: Chave de API não encontrada. Vá em 'Advanced Settings' -> 'Secrets' e adicione: GROQ_API_KEY = 'SUA_CHAVE'")
 
 # ==============================================================================
 # 2. SISTEMA DE BANCO DE DADOS (HUB)
@@ -72,7 +69,7 @@ def get_questoes(apostila_id):
     return questoes
 
 # ==============================================================================
-# 3. PROCESSAMENTO DE DOCUMENTOS E IA
+# 3. PROCESSAMENTO DE DOCUMENTOS E IA (GROQ)
 # ==============================================================================
 def extract_text_from_pdf(uploaded_file):
     pdf_reader = PyPDF2.PdfReader(uploaded_file)
@@ -82,13 +79,14 @@ def extract_text_from_pdf(uploaded_file):
     return text
 
 def ai_extract_questions(text, filename):
+    """Usa o Llama 3 via Groq para gerar questões"""
     prompt = f"""
     Você é um professor especialista em concursos. Analise o conteúdo da apostila '{filename}' e extraia ou crie questões de múltipla escolha.
     
     REGRAS RÍGIDAS:
-    1. Retorne EXCLUSIVAMENTE um formato JSON de lista.
-    2. A justificativa deve ser curta, técnica e objetiva, focando apenas em POR QUE a alternativa correta está certa.
-    3. NÃO mencione erros do aluno.
+    1. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
+    2. Não escreva nenhuma introdução ou conclusão, apenas o JSON.
+    3. A justificativa deve ser curta, técnica e objetiva.
     
     Modelo do JSON:
     [
@@ -96,35 +94,39 @@ def ai_extract_questions(text, filename):
         "pergunta": "Texto da pergunta",
         "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
         "correta": "A",
-        "justificativa": "Justificativa técnica e objetiva baseada no texto."
+        "justificativa": "Justificativa técnica e objetiva."
       }}
     ]
     
-    Conteúdo: {text[:30000]}
+    Conteúdo: {text[:12000]} 
     """
-    response = model.generate_content(prompt)
-    json_text = response.text.replace("```json", "").replace("```", "").strip()
-    return json.loads(json_text)
+    # Chamada da API do Groq
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.1-70b-versatile", # Modelo potente e rápido
+        response_format={"type": "json_object"} # Garante que venha JSON
+    )
+    
+    return json.loads(chat_completion.choices[0].message.content)
 
 # ==============================================================================
 # 4. INTERFACE DO USUÁRIO (STREAMLIT UI)
 # ==============================================================================
 init_db()
-st.set_page_config(page_title="Hub de Simulados IA", layout="wide", page_icon="📚")
+st.set_page_config(page_title="Hub de Simulados Groq AI", layout="wide", page_icon="⚡")
 
-st.sidebar.title("🚀 Menu Hub")
+st.sidebar.title("🚀 Menu Hub Groq")
 menu = st.sidebar.radio("Navegação", ["🏠 Home", "📁 Gerenciar Apostilas", "📝 Fazer Simulado"])
 
 if menu == "🏠 Home":
-    st.title("📚 Hub de Simulados Inteligente")
+    st.title("⚡ Hub de Simulados Ultra-Rápido")
     st.markdown("""
-    Bem-vindo ao seu centro de estudos automatizado.
+    Bem-vindo ao seu centro de estudos alimentado por **Groq LPU**.
     
-    **Como utilizar o sistema:**
-    1. Vá em **Gerenciar Apostilas** e suba seus arquivos PDF.
-    2. A IA processará o conteúdo e criará questões automaticamente.
-    3. Vá em **Fazer Simulado**, escolha a matéria e responda.
-    4. Receba a resposta correta com a justificativa técnica.
+    **Vantagens desta versão:**
+    - Processamento quase instantâneo.
+    - Inteligência do Llama 3.
+    - Justificativas técnicas precisas.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
@@ -133,33 +135,41 @@ elif menu == "📁 Gerenciar Apostilas":
     uploaded_file = st.file_uploader("Subir Nova Apostila (PDF)", type="pdf")
     
     if uploaded_file and st.button("Processar e Salvar no Hub"):
-        with st.spinner("A IA está analisando o PDF e gerando questões..."):
+        with st.spinner("Groq está gerando questões em alta velocidade..."):
             try:
                 text = extract_text_from_pdf(uploaded_file)
                 questoes = ai_extract_questions(text, uploaded_file.name)
+                
+                # Ajuste caso o Groq retorne um dicionário com a lista dentro
+                if isinstance(questoes, dict):
+                    for key in questoes:
+                        if isinstance(questoes[key], list):
+                            questoes = questoes[key]
+                            break
+
                 apostila_id = save_apostila(uploaded_file.name)
                 save_questoes(apostila_id, questoes)
-                st.success(f"Apostila '{uploaded_file.name}' cadastrada com sucesso!")
+                st.success(f"Sucesso! {len(questoes)} questões adicionadas ao Hub.")
             except Exception as e:
-                st.error(f"Erro ao processar PDF: {e}")
+                st.error(f"Erro ao processar: {e}")
 
     st.divider()
-    st.subheader("Apostilas já cadastradas")
+    st.subheader("Apostilas Cadastradas")
     df_apostilas = get_apostilas()
     if not df_apostilas.empty:
         st.table(df_apostilas)
     else:
-        st.info("Nenhuma apostila cadastrada ainda.")
+        st.info("Nenhuma apostila cadastrada.")
 
 elif menu == "📝 Fazer Simulado":
     st.title("📝 Simulado de Conhecimentos")
     df_apostilas = get_apostilas()
     
     if df_apostilas.empty:
-        st.warning("Nenhuma apostila cadastrada.")
+        st.warning("Cadastre materiais primeiro.")
     else:
         lista_nomes = df_apostilas['nome'].tolist()
-        escolha = st.selectbox("Selecione a apostila para o simulado:", lista_nomes)
+        escolha = st.selectbox("Selecione a apostila:", lista_nomes)
         apostila_id = df_apostilas[df_apostilas['nome'] == escolha]['id'].values[0]
         
         if st.button("Iniciar Simulado"):
