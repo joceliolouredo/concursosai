@@ -106,6 +106,25 @@ def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
 init_db()
 st.set_page_config(page_title="Coach AI", layout="wide", page_icon="🎯")
 
+# Estilização Customizada para reforçar o Dark Mode
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0E1117;
+    }
+    .stButton>button {
+        background-color: #00FFB2;
+        color: black;
+        font-weight: bold;
+        border-radius: 10px;
+    }
+    .stTextInput>div>div>input, .stSelectbox>div>div>div {
+        background-color: #262730 !important;
+        color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.sidebar.title("🚀 Coach AI")
 menu = st.sidebar.radio("Navegação", ["🏠 Home", "🎯 Gerar Simulado", "📜 Histórico"])
 
@@ -115,6 +134,12 @@ if menu == "🏠 Home":
     **Sua inteligência artificial para aprovação em concursos.**
     
     O **Coach AI** analisa editais, distribui matérias de forma proporcional ao cargo e avalia seu desempenho com dashboards interativos.
+    
+    **Vantagens do Coach AI:**
+    - ⚡ Geração instantânea de questões.
+    - 📊 Análise de desempenho por matéria.
+    - 📚 Reforço automatizado nos seus pontos fracos.
+    - 🎯 Foco total no cargo escolhido.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
@@ -216,7 +241,7 @@ elif menu == "🎯 Gerar Simulado":
             
             if st.button("Sair e Voltar ao Início"):
                 st.session_state.simulado_atual_id = None
-                st.session_sC_concluido = False
+                st.session_state.simulado_concluido = False
                 st.rerun()
 
 elif menu == "📜 Histórico":
