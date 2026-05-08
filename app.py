@@ -14,14 +14,12 @@ except Exception as e:
     st.error("⚠️ Erro: Chave de API não encontrada nos Secrets.")
 
 # ==============================================================================
-# 2. SISTEMA DE BANCO DE DADOS (MEMÓRIA DO HUB)
+# 2. SISTEMA DE BANCO DE DADOS (HUB)
 # ==============================================================================
 def init_db():
     conn = sqlite3.connect('hub_simulados.db')
     c = conn.cursor()
-    # Tabela para salvar os simulados gerados
     c.execute('CREATE TABLE IF NOT EXISTS simulados (id INTEGER PRIMARY KEY, concurso TEXT, materia TEXT, data TEXT)')
-    # Tabela para salvar as questões de cada simulado
     c.execute('''CREATE TABLE IF NOT EXISTS questoes 
                  (id INTEGER PRIMARY KEY, simulado_id INTEGER, pergunta TEXT, 
                  opcoes TEXT, correta TEXT, justificativa TEXT)''')
@@ -70,19 +68,18 @@ def ai_generate_questions(concurso, materia, quantidade):
     Você é um professor especialista em concursos públicos. 
     Crie {quantidade} questões de múltipla escolha para o concurso: {concurso}, focado na matéria: {materia}.
     
-    Siga rigorosamente o estilo da banca organizadora mais comum para este concurso.
-    
-    REGRAS:
-    1. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
-    2. As questões devem ser de nível médio/difícil.
-    3. A justificativa deve ser técnica, objetiva e explicar por que a alternativa correta é a certa.
+    REGRAS CRÍTICAS:
+    1. Crie alternativas COMPLETAS e plausíveis. Não deixe opções vazias.
+    2. Cada questão deve ter exatamente 4 opções (A, B, C, D).
+    3. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
+    4. A justificativa deve ser técnica e objetiva.
     
     Modelo do JSON:
     {{
       "questoes": [
         {{
           "pergunta": "Texto da pergunta",
-          "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+          "opcoes": {{"A": "Texto da opção A", "B": "Texto da opção B", "C": "Texto da opção C", "D": "Texto da opção D"}},
           "correta": "A",
           "justificativa": "Explicação técnica curta."
         }}
@@ -112,14 +109,7 @@ if menu == "🏠 Home":
     st.title("🎯 AI Simulado Expert")
     st.markdown("""
     **O simulador de concursos mais rápido do mundo.**
-    
-    Agora você não precisa mais de PDFs! Basta dizer qual concurso e matéria você quer estudar, 
-    e nossa IA gera questões inéditas e precisas baseadas no padrão das bancas.
-    
-    **Como começar:**
-    1. Vá em **Gerar Novo Simulado**.
-    2. Digite o nome do concurso e a matéria.
-    3. Escolha a quantidade de questões e comece a treinar!
+     la IA gera questões inéditas e precisas baseadas no padrão das bancas.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
@@ -137,7 +127,7 @@ elif menu == "🎯 Gerar Novo Simulado":
         if not concurso or not materia:
             st.error("Por favor, preencha o concurso e a matéria.")
         else:
-            with st.spinner(f"IA criando {qtd} questões de {materia} para {concurso}..."):
+            with st.spinner(f"IA criando {qtd} questões..."):
                 try:
                     questoes = ai_generate_questions(concurso, materia, qtd)
                     if questoes:
@@ -148,7 +138,7 @@ elif menu == "🎯 Gerar Novo Simulado":
                         st.session_state.respostas_usuario = {}
                         st.rerun()
                     else:
-                        st.error("A IA não conseguiu gerar as questões. Tente mudar a matéria.")
+                        st.error("A IA não conseguiu gerar as questões.")
                 except Exception as e:
                     st.error(f"Erro técnico: {e}")
 
@@ -161,7 +151,13 @@ elif menu == "🎯 Gerar Novo Simulado":
             for i, q in enumerate(questoes):
                 st.markdown(f"**Questão {i+1}**")
                 st.write(q['pergunta'])
-                st.session_state.respostas_usuario[i] = st.radio(f"Opção Q{i+1}:", options=q['opcoes'].keys(), key=f"q_{i}")
+                
+                # CORREÇÃO AQUI: Criamos labels como "A) Texto da Opção"
+                opcoes_formatadas = [f"{k}) {v}" for k, v in q['opcoes'].items()]
+                
+                # O usuário escolhe a frase, mas nós guardamos apenas a letra (primeiro caractere)
+                resp = st.radio(f"Selecione a alternativa correta:", options=opcoes_formatadas, key=f"q_{i}")
+                st.session_state.respostas_usuario[i] = resp[0] # Pega apenas a letra 'A', 'B', etc.
                 st.write("---")
             
             if st.form_submit_button("Finalizar e Ver Justificativas"):
@@ -183,10 +179,8 @@ elif menu == "📜 Meus Simulados":
     if df.empty:
         st.info("Você ainda não gerou nenhum simulado.")
     else:
-        # Criando uma lista de opções para o usuário escolher um simulado antigo
         opcoes = df['id'].tolist()
         nomes = [f"ID {id} - {row['concurso']} ({row['materia']}) - {row['data']}" for id, row in zip(df['id'], df.to_dict('records'))]
-        
         escolha = st.selectbox("Escolha um simulado para revisar:", opcoes, format_func=lambda x: nomes[df[df['id']==x].index[0]])
         
         if st.button("Revisar Questões"):
