@@ -15,24 +15,17 @@ except Exception as e:
     st.error("⚠️ Erro: Chave de API não encontrada nos Secrets do Streamlit Cloud.")
 
 # ==============================================================================
-# 2. SISTEMA de BANCO DE DADOS (MEMÓRIA DO HUB)
+# 2. SISTEMA de BANCO de DADOS (HUB v2 - Nova Versão)
 # ==============================================================================
-def init_db():
-    conn = sqlite3.connect('hub_simulados.db')
-    c = conn.cursor()
-    
-    # RESET DE TABELAS: Para evitar o erro "no column named dificuldade"
-    # Isso garante que a estrutura do banco esteja sempre atualizada com as novas colunas
-    try:
-        c.execute('DROP TABLE IF EXISTS questoes')
-        c.execute('DROP TABLE IF NOT EXISTS simulados')
-    except:
-        pass
+# MUDAMOS O NOME DO ARQUIVO PARA hub_simulados_v2.db PARA ELIMINAR ERROS DE COLUNA
+DB_NAME = 'hub_simulados_v2.db'
 
-    # Tabela de Simulados (Estrutura Atualizada)
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # Criando a tabela de Simulados com a coluna 'dificuldade'
     c.execute('CREATE TABLE IF NOT EXISTS simulados (id INTEGER PRIMARY KEY, concurso TEXT, dificuldade TEXT, data TEXT)')
-    
-    # Tabela de Questões (Estrutura Atualizada com Matéria)
+    # Criando a tabela de Questões com a coluna 'materia'
     c.execute('''CREATE TABLE IF NOT EXISTS questoes 
                  (id INTEGER PRIMARY KEY, simulado_id INTEGER, materia TEXT, pergunta TEXT, 
                  opcoes TEXT, correta TEXT, justificativa TEXT)''')
@@ -40,7 +33,7 @@ def init_db():
     conn.close()
 
 def save_simulado(concurso, dificuldade):
-    conn = sqlite3.connect('hub_simulados.db')
+    conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     from datetime import datetime
     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -51,7 +44,7 @@ def save_simulado(concurso, dificuldade):
     return id_simulado
 
 def save_questoes(simulado_id, questoes):
-    conn = sqlite3.connect('hub_simulados.db')
+    conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     for q in questoes:
         c.execute('INSERT INTO questoes (simulado_id, materia, pergunta, opcoes, correta, justificativa) VALUES (?, ?, ?, ?, ?, ?)',
@@ -60,13 +53,13 @@ def save_questoes(simulado_id, questoes):
     conn.close()
 
 def get_simulados():
-    conn = sqlite3.connect('hub_simulados.db')
+    conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query("SELECT * FROM simulados ORDER BY id DESC", conn)
     conn.close()
     return df
 
 def get_questoes(simulado_id):
-    conn = sqlite3.connect('hub_simulados.db')
+    conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('SELECT * FROM questoes WHERE simulado_id = ?', (simulado_id,))
     rows = c.fetchall()
@@ -101,13 +94,11 @@ def ai_generate_questions(concurso, qtd_total, dificuldade):
       ]
     }}
     """
-    
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
         model="llama-3.3-70b-versatile", 
         response_format={"type": "json_object"} 
     )
-    
     res = json.loads(chat_completion.choices[0].message.content)
     return res.get("questoes", [])
 
@@ -125,13 +116,7 @@ if menu == "🏠 Home":
     st.markdown("""
     **O simulador mais inteligente para sua aprovação.**
     
-    A IA analisa o edital, distribui as matérias e avalia seu desempenho com gráficos precisos.
-    
-    **Como funciona:**
-    1. Escolha o concurso e a quantidade de questões.
-    2. Selecione a dificuldade (Fácil, Média ou Difícil).
-    3. Responda ao simulado.
-    4. Veja seu gráfico de acertos e receba dicas de onde melhorar.
+     la IA analisa o edital, distribui as matérias e avalia seu desempenho com gráficos precisos.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
@@ -181,11 +166,7 @@ elif menu == "🎯 Gerar Simulado":
                     st.session_state.simulado_concluido = True
                     st.rerun()
         else:
-            # ==========================================================================
-            # ANÁLISE DE RESULTADOS E GRÁFICOS
-            # ==========================================================================
             st.header("📊 Análise de Desempenho")
-            
             stats = {} 
             for i, q in enumerate(questoes):
                 materia = q['materia']
@@ -210,10 +191,8 @@ elif menu == "🎯 Gerar Simulado":
                 st.warning(f"🚨 **Atenção:** Você precisa de reforço em: {', '.join(materias_fracas)}")
                 if st.button("Gerar Questões de Reforço Agora! 📚"):
                     st.info("A IA está criando questões focadas nos seus erros...")
-                    # Lógica de reforço simples: gera 5 questões das matérias fracas
                     ref_materia = " e ".join(materias_fracas)
                     questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
-                    # Exibimos as questões de reforço logo abaixo
                     for qr in questoes_ref:
                         st.markdown(f"**{qr['materia']}**: {qr['pergunta']}")
                         st.write(f"Correta: {qr['correta']} | {qr['justificativa']}")
