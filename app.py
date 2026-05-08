@@ -100,60 +100,62 @@ def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
     return res.get("questoes", [])
 
 # ==============================================================================
-# 4. INTERFACE DO USUÁRIO (HARMONIZED DARK THEME)
+# 4. INTERFACE DO USUÁRIO (HARMONIZED LIGHT THEME)
 # ==============================================================================
 init_db()
 st.set_page_config(page_title="Coach AI | Mentor de Concursos", layout="wide", page_icon="🎯")
 
-# Estilização Harmonizada (Clean Dark)
+# Estilização Harmonizada (Light & Clean)
 st.markdown("""
     <style>
     /* Fundo e Cores Gerais */
     .stApp {
-        background-color: #0E1117;
-        color: #E0E0E0;
+        background-color: #F8F9FA;
+        color: #212529;
     }
     
     /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #161B22 !important;
-        border-right: 1px solid #30363D;
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #E0E0E0;
     }
     
     /* Cartões de Questão */
     .q-card {
-        background-color: #1C2128;
+        background-color: #FFFFFF;
         padding: 25px;
         border-radius: 12px;
-        border: 1px solid #30363D;
+        border: 1px solid #E0E0E0;
         margin-bottom: 20px;
-        color: #E0E0E0;
+        color: #212529;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
     /* Botões */
     .stButton>button {
-        background-color: #238636 !important; /* Verde GitHub */
+        background-color: #0056b3 !important; /* Azul Profissional */
         color: white !important;
         font-weight: 600 !important;
-        border-radius: 6px !important;
+        border-radius: 8px !important;
         border: none !important;
         transition: 0.2s;
     }
     .stButton>button:hover {
-        background-color: #2EA043 !important;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        background-color: #004494 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
 
     /* Inputs */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-        background-color: #0D1117 !important;
-        color: #C9D1D9 !important;
-        border: 1px solid #30363D !important;
+        background-color: #FFFFFF !important;
+        color: #212529 !important;
+        border: 1px solid #CED4DA !important;
     }
 
     /* Títulos */
     h1, h2, h3 {
-        color: #F0F6FC !important;
+        color: #004085 !important;
         font-weight: 700 !important;
     }
     </style>
@@ -221,8 +223,8 @@ elif menu == "🎯 Gerar Simulado":
             with st.form("simulado_form"):
                 for i, q in enumerate(questoes):
                     st.markdown(f"""<div class="q-card">
-                        <small style="color: #8b949e;">{q['materia'].upper()}</small><br>
-                        <strong>Questão {i+1}</strong><br>{q['pergunta']}
+                        <small style="color: #6c757d;">{q['materia'].upper()}</small><br>
+                        <strong style="font-size:1.1em;">Questão {i+1}</strong><br>{q['pergunta']}
                     </div>""", unsafe_allow_html=True)
                     
                     opcoes_formatadas = [f"{k}) {v}" for k, v in q['opcoes'].items()]
@@ -245,7 +247,7 @@ elif menu == "🎯 Gerar Simulado":
             
             df_stats = pd.DataFrame([{"Matéria": k, "Aproveitamento": (v["corretas"]/v["total"])*100, "Corretas": v["corretas"], "Total": v["total"], "Status": "Sólido" if (v["corretas"]/v["total"]) >= 0.7 else "Atenção" if (v["corretas"]/v["total"]) >= 0.5 else "Crítico"} for k, v in stats.items()])
             
-            color_map = {"Sólido": "#238636", "Atenção": "#D29922", "Crítico": "#DA3632"}
+            color_map = {"Sólido": "#28a745", "Atenção": "#ffc107", "Crítico": "#dc3545"}
             df_stats['Cor'] = df_stats['Status'].map(color_map)
 
             fig = go.Figure()
@@ -255,8 +257,16 @@ elif menu == "🎯 Gerar Simulado":
                 customdata=df_stats[['Corretas', 'Total']],
                 hovertemplate="<b>%{x}</b><br>Aproveitamento: %{y:.1f}%<br>Acertos: %{customdata[0]}/%{customdata[1]}<extra></extra>"
             ))
-            fig.add_hline(y=70, line_dash="dash", line_color="#8b949e", annotation_text="Meta de Aprovação (70%)")
-            fig.update_layout(title="Aproveitamento por Matéria (%)", yaxis=dict(range=[0, 110]), template="plotly_dark", showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig.add_hline(y=70, line_dash="dash", line_color="#6c757d", annotation_text="Meta (70%)")
+            fig.update_layout(
+                title="Aproveitamento por Matéria (%)", 
+                yaxis=dict(range=[0, 110], gridcolor="#E0E0E0"), 
+                xaxis=dict(gridcolor="#E0E0E0"),
+                template="plotly_white", 
+                showlegend=False, 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
             st.plotly_chart(fig, use_container_width=True)
             
             materias_fracas = [m for m, v in stats.items() if (v["corretas"]/v["total"]) < 0.7]
@@ -267,8 +277,8 @@ elif menu == "🎯 Gerar Simulado":
                         questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
                         for qr in questoes_ref:
                             st.markdown(f"""<div class="q-card">
-                                <strong>{qr['materia']} (Reforço)</strong><br>{qr['pergunta']}<br>
-                                <span style="color:#238636"><b>Correta: {qr['correta']}</b></span><br>
+                                <strong style="color:#0056b3;">{qr['materia']} (Reforço)</strong><br>{qr['pergunta']}<br>
+                                <span style="color:#28a745"><b>Correta: {qr['correta']}</b></span><br>
                                 <small><i>{qr['justificativa']}</i></small>
                             </div>""", unsafe_allow_html=True)
             else:
@@ -279,12 +289,12 @@ elif menu == "🎯 Gerar Simulado":
             for i, q in enumerate(questoes):
                 user_ans = st.session_state.respostas_usuario.get(i, "N/A")
                 correct = q['correta']
-                color = "#238636" if user_ans == correct else "#DA3632"
-                st.markdown(f"""<div class="q-card" style="border-left: 5px solid {color}">
-                    <strong>{q['materia']} | Q{i+1}</strong><br>{q['pergunta']}<br><br>
-                    Sua resposta: <span style="color:{color}">{user_ans}</span> | 
-                    Correta: <span style="color:#238636">{correct}</span><br>
-                    <small><b>✅ Justificativa:</b> {q['justificativa']}</small>
+                color = "#28a745" if user_ans == correct else "#dc3545"
+                st.markdown(f"""<div class="q-card" style="border-left: 6px solid {color}">
+                    <strong style="color:#495057;">{q['materia']} | Q{i+1}</strong><br>{q['pergunta']}<br><br>
+                    Sua resposta: <span style="color:{color}; font-weight:bold;">{user_ans}</span> | 
+                    Correta: <span style="color:#28a745; font-weight:bold;">{correct}</span><br>
+                    <small><b style="color:#495057;">✅ Justificativa:</b> {q['justificativa']}</small>
                 </div>""", unsafe_allow_html=True)
             
             if st.button("Sair e Voltar ao Início"):
@@ -305,7 +315,7 @@ elif menu == "📜 Histórico":
             questoes = get_questoes(escolha)
             for i, q in enumerate(questoes):
                 st.markdown(f"""<div class="q-card">
-                    <strong>{q['materia']} | Questão {i+1}</strong><br>{q['pergunta']}<br><br>
-                    <span style="color:#238636"><b>Resposta Correta: {q['correta']}</b></span><br>
-                    <small><b>✅ Justificativa:</b> {q['justificativa']}</small>
+                    <strong style="color:#495057;">{q['materia']} | Questão {i+1}</strong><br>{q['pergunta']}<br><br>
+                    <span style="color:#28a745"><b>Resposta Correta: {q['correta']}</b></span><br>
+                    <small><b style="color:#495057;">✅ Justificativa:</b> {q['justificativa']}</small>
                 </div>""", unsafe_allow_html=True)
