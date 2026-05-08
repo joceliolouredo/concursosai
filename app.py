@@ -4,12 +4,12 @@ import PyPDF2
 import json
 import sqlite3
 import pandas as pd
+import random # Importado para fazer o sorteio das questões
 
 # ==============================================================================
 # 1. CONFIGURAÇÃO DE SEGURANÇA E IA (GROQ)
 # ==============================================================================
 try:
-    # A chave GROQ_API_KEY deve ser configurada nos "Secrets" do Streamlit Cloud
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
     st.error("⚠️ Erro: Chave de API não encontrada. Vá em 'Advanced Settings' -> 'Secrets' e adicione: GROQ_API_KEY = 'SUA_CHAVE'")
@@ -79,7 +79,6 @@ def extract_text_from_pdf(uploaded_file):
     return text
 
 def ai_extract_questions(text, filename):
-    """Usa o Llama 3.3 via Groq para gerar questões"""
     prompt = f"""
     Você é um professor especialista em concursos. Analise o conteúdo da apostila '{filename}' e extraia ou crie questões de múltipla escolha.
     
@@ -100,18 +99,13 @@ def ai_extract_questions(text, filename):
     
     Conteúdo: {text[:12000]} 
     """
-    # CHAMADA ATUALIZADA PARA O MODELO 3.3 (Versão mais estável e atual)
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
         model="llama-3.3-70b-versatile", 
         response_format={"type": "json_object"} 
     )
-    
     content = chat_completion.choices[0].message.content
     res = json.loads(content)
-    
-    # O Groq as vezes retorna {"questoes": [...]} em vez de apenas a lista. 
-    # Este bloco garante que sempre teremos a lista de questões.
     if isinstance(res, dict):
         for value in res.values():
             if isinstance(value, list):
@@ -148,7 +142,6 @@ elif menu == "📁 Gerenciar Apostilas":
             try:
                 text = extract_text_from_pdf(uploaded_file)
                 questoes = ai_extract_questions(text, uploaded_file.name)
-                
                 apostila_id = save_apostila(uploaded_file.name)
                 save_questoes(apostila_id, questoes)
                 st.success(f"Sucesso! {len(questoes)} questões adicionadas ao Hub.")
@@ -174,10 +167,26 @@ elif menu == "📝 Fazer Simulado":
         escolha = st.selectbox("Selecione a apostila:", lista_nomes)
         apostila_id = df_apostilas[df_apostilas['nome'] == escolha]['id'].values[0]
         
+        # --- NOVA OPÇÃO: QUANTIDADE DE QUESTÕES ---
+        qtd_questoes = st.number_input("Quantas questões deseja no simulado?", min_value=1, value=10, step=1)
+        
         if st.button("Iniciar Simulado"):
-            st.session_state.questoes_simulado = get_questoes(apostila_id)
-            st.session_state.respostas_usuario = {}
-            st.rerun()
+            all_questions = get_questoes(apostila_id)
+            
+            if not all_questions:
+                st.error("Esta apostila não possui questões cadastradas.")
+            else:
+                # Embaralha as questões para ser um simulado real
+                random.shuffle(all_questions)
+                
+                # Seleciona a quantidade pedida (ou o máximo disponível se for menor)
+                final_count = min(len(all_questions), qtd_questoes)
+                if final_count < qtd_questoes:
+                    st.warning(f"A apostila possui apenas {final_count} questões. Usaremos todas elas.")
+                
+                st.session_state.questoes_simulado = all_questions[:final_count]
+                st.session_state.respostas_usuario = {}
+                st.rerun()
 
         if 'questoes_simulado' in st.session_state:
             with st.form("simulado_form"):
