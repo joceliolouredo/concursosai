@@ -15,29 +15,28 @@ except Exception as e:
     st.error("⚠️ Erro: Chave de API não encontrada nos Secrets do Streamlit Cloud.")
 
 # ==============================================================================
-# 2. SISTEMA de BANCO de DADOS (HUB v2 - Nova Versão)
+# 2. SISTEMA de BANCO de DADOS (HUB v3 - Versão com Cargos)
 # ==============================================================================
-# MUDAMOS O NOME DO ARQUIVO PARA hub_simulados_v2.db PARA ELIMINAR ERROS DE COLUNA
-DB_NAME = 'hub_simulados_v2.db'
+DB_NAME = 'hub_simulados_v3.db' # Nova versão para evitar erros de coluna
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # Criando a tabela de Simulados com a coluna 'dificuldade'
-    c.execute('CREATE TABLE IF NOT EXISTS simulados (id INTEGER PRIMARY KEY, concurso TEXT, dificuldade TEXT, data TEXT)')
-    # Criando a tabela de Questões com a coluna 'materia'
+    # Tabela de Simulados agora inclui o CARGO
+    c.execute('CREATE TABLE IF NOT EXISTS simulados (id INTEGER PRIMARY KEY, concurso TEXT, cargo TEXT, dificuldade TEXT, data TEXT)')
+    # Tabela de Questões
     c.execute('''CREATE TABLE IF NOT EXISTS questoes 
                  (id INTEGER PRIMARY KEY, simulado_id INTEGER, materia TEXT, pergunta TEXT, 
                  opcoes TEXT, correta TEXT, justificativa TEXT)''')
     conn.commit()
     conn.close()
 
-def save_simulado(concurso, dificuldade):
+def save_simulado(concurso, cargo, dificuldade):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     from datetime import datetime
     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-    c.execute('INSERT INTO simulados (concurso, dificuldade, data) VALUES (?, ?, ?)', (concurso, dificuldade, data_atual))
+    c.execute('INSERT INTO simulados (concurso, cargo, dificuldade, data) VALUES (?, ?, ?, ?)', (concurso, cargo, dificuldade, data_atual))
     id_simulado = c.lastrowid
     conn.commit()
     conn.close()
@@ -69,16 +68,17 @@ def get_questoes(simulado_id):
 # ==============================================================================
 # 3. MOTOR de GERAÇÃO de QUESTÕES (IA GROQ)
 # ==============================================================================
-def ai_generate_questions(concurso, qtd_total, dificuldade):
+def ai_generate_questions(concurso, cargo, qtd_total, dificuldade):
     prompt = f"""
-    Você é um consultor de editais e professor especialista em concursos.
-    Sua tarefa é criar um simulado para o concurso: {concurso}, com um total de {qtd_total} questões.
+    Você é um professor especialista em concursos públicos.
+    Crie um simulado para o concurso: {concurso}, especificamente para o cargo de: {cargo}.
+    QUANTIDADE TOTAL: {qtd_total} questões.
     NÍVEL DE DIFICULDADE: {dificuldade}.
     
-    Siga rigorosamente:
-    1. Distribua as {qtd_total} questões proporcionalmente entre as matérias mais cobradas deste concurso.
-    2. Se o nível for 'Difícil', foque em pegadinhas e detalhes técnicos. Se for 'Fácil', foque em conceitos base.
-    3. Cada questão deve ter exatamente 4 opções (A, B, C, D) completas.
+    REGRAS DE OURO:
+    1. Analise o edital típico para o cargo de {cargo} no concurso {concurso}.
+    2. Distribua as questões entre as matérias que REALMENTE caem para este cargo.
+    3. Crie alternativas completas e plausíveis (A, B, C, D).
     4. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
     
     Modelo do JSON:
@@ -89,7 +89,7 @@ def ai_generate_questions(concurso, qtd_total, dificuldade):
           "pergunta": "Texto da pergunta",
           "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
           "correta": "A",
-          "justificativa": "Explicação técnica curta e objetiva."
+          "justificativa": "Explicação técnica curta."
         }}
       ]
     }}
@@ -103,7 +103,7 @@ def ai_generate_questions(concurso, qtd_total, dificuldade):
     return res.get("questoes", [])
 
 # ==============================================================================
-# 4. INTERFACE DO USUÁRIO (STREAMLIT)
+# 4. INTERFACE DO USUÁRIO
 # ==============================================================================
 init_db()
 st.set_page_config(page_title="Coach AI Simulado", layout="wide", page_icon="🎯")
@@ -114,32 +114,32 @@ menu = st.sidebar.radio("Navegação", ["🏠 Home", "🎯 Gerar Simulado", "�
 if menu == "🏠 Home":
     st.title("🎯 Coach AI Simulado")
     st.markdown("""
-    **O simulador mais inteligente para sua aprovação.**
+    **A precisão do edital na palma da sua mão.**
     
-     la IA analisa o edital, distribui as matérias e avalia seu desempenho com gráficos precisos.
+    Agora você define o **Concurso** e o **Cargo**, e a IA distribui as matérias exatamente como cairá na sua prova.
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
 elif menu == "🎯 Gerar Simulado":
     st.title("🎯 Novo Simulado Personalizado")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        concurso = st.text_input("Nome do Concurso", placeholder="Ex: Banco do Brasil, PF...")
+        concurso = st.text_input("Nome do Concurso", placeholder="Ex: Banco do Brasil, PF, TJSP...")
+        cargo = st.text_input("Cargo/Função", placeholder="Ex: Escriturário, Agente, Analista...")
     with col2:
         dificuldade = st.selectbox("Nível de Dificuldade", ["Fácil", "Média", "Difícil"])
-    with col3:
         qtd_total = st.number_input("Total de Questões", min_value=5, max_value=100, value=10)
     
     if st.button("Gerar Simulado ⚡"):
-        if not concurso:
-            st.error("Digite o nome do concurso.")
+        if not concurso or not cargo:
+            st.error("Por favor, preencha o Concurso e o Cargo.")
         else:
-            with st.spinner("IA analisando edital e gerando questões..."):
+            with st.spinner(f"IA analisando edital para {cargo} em {concurso}..."):
                 try:
-                    questoes = ai_generate_questions(concurso, qtd_total, dificuldade)
+                    questoes = ai_generate_questions(concurso, cargo, qtd_total, dificuldade)
                     if questoes:
-                        simulado_id = save_simulado(concurso, dificuldade)
+                        simulado_id = save_simulado(concurso, cargo, dificuldade)
                         save_questoes(simulado_id, questoes)
                         st.session_state.simulado_atual_id = simulado_id
                         st.session_state.respostas_usuario = {}
@@ -170,35 +170,29 @@ elif menu == "🎯 Gerar Simulado":
             stats = {} 
             for i, q in enumerate(questoes):
                 materia = q['materia']
-                if materia not in stats:
-                    stats[materia] = {"corretas": 0, "total": 0}
+                if materia not in stats: stats[materia] = {"corretas": 0, "total": 0}
                 stats[materia]["total"] += 1
                 if st.session_state.respostas_usuario.get(i) == q['correta']:
                     stats[materia]["corretas"] += 1
             
-            df_stats = pd.DataFrame([
-                {"Matéria": k, "Aproveitamento (%)": (v["corretas"]/v["total"])*100} 
-                for k, v in stats.items()
-            ])
-            
-            fig = px.bar(df_stats, x="Matéria", y="Aproveitamento (%)", 
-                         color="Aproveitamento (%)", color_continuous_scale="RdYlGn",
-                         title="Seu Aproveitamento por Matéria")
+            df_stats = pd.DataFrame([{"Matéria": k, "Aproveitamento (%)": (v["corretas"]/v["total"])*100} for k, v in stats.items()])
+            fig = px.bar(df_stats, x="Matéria", y="Aproveitamento (%)", color="Aproveitamento (%)", color_continuous_scale="RdYlGn")
             st.plotly_chart(fig)
             
             materias_fracas = [m for m, v in stats.items() if (v["corretas"]/v["total"]) < 0.7]
             if materias_fracas:
-                st.warning(f"🚨 **Atenção:** Você precisa de reforço em: {', '.join(materias_fracas)}")
+                st.warning(f"🚨 **Atenção:** Reforce estas matérias: {', '.join(materias_fracas)}")
                 if st.button("Gerar Questões de Reforço Agora! 📚"):
-                    st.info("A IA está criando questões focadas nos seus erros...")
+                    st.info("Criando questões focadas nos seus erros...")
                     ref_materia = " e ".join(materias_fracas)
-                    questoes_ref = ai_generate_questions(f"Reforço {concurso}", 5, "Média")
+                    # Aqui geramos um novo simulado focado no cargo e nas matérias fracas
+                    questoes_ref = ai_generate_questions(f"Reforço {concurso} - {cargo}", 5, "Média")
                     for qr in questoes_ref:
                         st.markdown(f"**{qr['materia']}**: {qr['pergunta']}")
                         st.write(f"Correta: {qr['correta']} | {qr['justificativa']}")
                         st.write("---")
             else:
-                st.success("🌟 Desempenho excelente em todas as matérias!")
+                st.success("🌟 Desempenho excelente!")
 
             st.divider()
             st.subheader("Revisão Detalhada")
@@ -223,7 +217,7 @@ elif menu == "📜 Histórico":
         st.info("Nenhum simulado registrado.")
     else:
         opcoes = df['id'].tolist()
-        nomes = [f"ID {id} - {row['concurso']} ({row['dificuldade']}) - {row['data']}" for id, row in zip(df['id'], df.to_dict('records'))]
+        nomes = [f"ID {id} - {row['concurso']} ({row['cargo']}) - {row['data']}" for id, row in zip(df['id'], df.to_dict('records'))]
         escolha = st.selectbox("Escolha um simulado para revisar:", opcoes, format_func=lambda x: nomes[df[df['id']==x].index[0]])
         if st.button("Revisar Questões"):
             questoes = get_questoes(escolha)
