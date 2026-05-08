@@ -1,6 +1,5 @@
 import streamlit as st
 from groq import Groq
-import PyPDF2
 import json
 import sqlite3
 import pandas as pd
@@ -12,220 +11,189 @@ import random
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("⚠️ Erro: Chave de API não encontrada. Vá em 'Advanced Settings' -> 'Secrets' e adicione: GROQ_API_KEY = 'SUA_CHAVE'")
+    st.error("⚠️ Erro: Chave de API não encontrada nos Secrets.")
 
 # ==============================================================================
-# 2. SISTEMA DE BANCO DE DADOS (HUB)
+# 2. SISTEMA DE BANCO DE DADOS (MEMÓRIA DO HUB)
 # ==============================================================================
 def init_db():
-    conn = sqlite3.connect('hub_concursos.db')
+    conn = sqlite3.connect('hub_simulados.db')
     c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS apostilas (id INTEGER PRIMARY KEY, nome TEXT)')
+    # Tabela para salvar os simulados gerados
+    c.execute('CREATE TABLE IF NOT EXISTS simulados (id INTEGER PRIMARY KEY, concurso TEXT, materia TEXT, data TEXT)')
+    # Tabela para salvar as questões de cada simulado
     c.execute('''CREATE TABLE IF NOT EXISTS questoes 
-                 (id INTEGER PRIMARY KEY, apostila_id INTEGER, pergunta TEXT, 
+                 (id INTEGER PRIMARY KEY, simulado_id INTEGER, pergunta TEXT, 
                  opcoes TEXT, correta TEXT, justificativa TEXT)''')
     conn.commit()
     conn.close()
 
-def save_apostila(nome):
-    conn = sqlite3.connect('hub_concursos.db')
+def save_simulado(concurso, materia):
+    conn = sqlite3.connect('hub_simulados.db')
     c = conn.cursor()
-    c.execute('INSERT INTO apostilas (nome) VALUES (?)', (nome,))
-    id_apostila = c.lastrowid
+    from datetime import datetime
+    data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
+    c.execute('INSERT INTO simulados (concurso, materia, data) VALUES (?, ?, ?)', (concurso, materia, data_atual))
+    id_simulado = c.lastrowid
     conn.commit()
     conn.close()
-    return id_apostila
+    return id_simulado
 
-def save_questoes(apostila_id, questoes):
-    conn = sqlite3.connect('hub_concursos.db')
+def save_questoes(simulado_id, questoes):
+    conn = sqlite3.connect('hub_simulados.db')
     c = conn.cursor()
     for q in questoes:
-        c.execute('INSERT INTO questoes (apostila_id, pergunta, opcoes, correta, justificativa) VALUES (?, ?, ?, ?, ?)',
-                  (apostila_id, q['pergunta'], json.dumps(q['opcoes']), q['correta'], q['justificativa']))
+        c.execute('INSERT INTO questoes (simulado_id, pergunta, opcoes, correta, justificativa) VALUES (?, ?, ?, ?, ?)',
+                  (simulado_id, q['pergunta'], json.dumps(q['opcoes']), q['correta'], q['justificativa']))
     conn.commit()
     conn.close()
 
-def get_apostilas_com_contagem():
-    """Retorna as apostilas e a quantidade de questões de cada uma"""
-    conn = sqlite3.connect('hub_concursos.db')
-    query = '''
-        SELECT a.id, a.nome, COUNT(q.id) as total_questoes 
-        FROM apostilas a 
-        LEFT JOIN questoes q ON a.id = q.apostila_id 
-        GROUP BY a.id
-    '''
-    df = pd.read_sql_query(query, conn)
+def get_simulados():
+    conn = sqlite3.connect('hub_simulados.db')
+    df = pd.read_sql_query("SELECT * FROM simulados ORDER BY id DESC", conn)
     conn.close()
     return df
 
-def get_questoes(apostila_id):
-    conn = sqlite3.connect('hub_concursos.db')
+def get_questoes(simulado_id):
+    conn = sqlite3.connect('hub_simulados.db')
     c = conn.cursor()
-    c.execute('SELECT * FROM questoes WHERE apostila_id = ?', (apostila_id,))
+    c.execute('SELECT * FROM questoes WHERE simulado_id = ?', (simulado_id,))
     rows = c.fetchall()
     conn.close()
-    questoes = []
-    for row in rows:
-        questoes.append({
-            "id": row[0],
-            "pergunta": row[2],
-            "opcoes": json.loads(row[3]),
-            "correta": row[4],
-            "justificativa": row[5]
-        })
-    return questoes
+    return [{"id": r[0], "pergunta": r[2], "opcoes": json.loads(r[3]), "correta": r[4], "justificativa": r[5]} for r in rows]
 
 # ==============================================================================
-# 3. PROCESSAMENTO DE DOCUMENTOS E IA (GROQ)
+# 3. MOTOR DE GERAÇÃO de QUESTÕES (GROQ)
 # ==============================================================================
-def extract_text_from_pdf(uploaded_file):
-    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text()
-    return text
-
-def ai_extract_questions(text, filename):
-    # Aumentei o limite de texto para 30.000 caracteres para ler mais páginas
+def ai_generate_questions(concurso, materia, quantidade):
     prompt = f"""
-    Você é um professor especialista em concursos. Analise o conteúdo da apostila '{filename}'.
+    Você é um professor especialista em concursos públicos. 
+    Crie {quantidade} questões de múltipla escolha para o concurso: {concurso}, focado na matéria: {materia}.
     
-    OBJETIVO: Extrair as questões de múltipla escolha presentes no texto. 
-    SE NÃO ENCONTRAR QUESTÕES PRONTAS: Você DEVE criar questões inéditas de múltipla escolha baseadas rigorosamente na teoria do texto.
-
-    REGRAS RÍGIDAS:
+    Siga rigorosamente o estilo da banca organizadora mais comum para este concurso.
+    
+    REGRAS:
     1. Retorne EXCLUSIVAMENTE um JSON no formato de lista.
-    2. Não escreva nenhuma introdução, comentário ou conclusão.
-    3. A justificativa deve ser curta, técnica e objetiva.
+    2. As questões devem ser de nível médio/difícil.
+    3. A justificativa deve ser técnica, objetiva e explicar por que a alternativa correta é a certa.
     
     Modelo do JSON:
-    [
-      {{
-        "pergunta": "Texto da pergunta",
-        "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
-        "correta": "A",
-        "justificativa": "Justificativa técnica e objetiva."
-      }}
-    ]
-    
-    Conteúdo: {text[:30000]} 
+    {{
+      "questoes": [
+        {{
+          "pergunta": "Texto da pergunta",
+          "opcoes": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+          "correta": "A",
+          "justificativa": "Explicação técnica curta."
+        }}
+      ]
+    }}
     """
+    
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
         model="llama-3.3-70b-versatile", 
         response_format={"type": "json_object"} 
     )
-    content = chat_completion.choices[0].message.content
-    res = json.loads(content)
     
-    # Tratamento robusto para extrair a lista de questões do JSON
-    if isinstance(res, dict):
-        for value in res.values():
-            if isinstance(value, list):
-                return value
-        # Se o dicionário tiver apenas uma chave que é a lista
-        if len(res) == 1:
-            key = list(res.keys())[0]
-            if isinstance(res[key], list):
-                return res[key]
-    return res if isinstance(res, list) else []
+    res = json.loads(chat_completion.choices[0].message.content)
+    return res.get("questoes", [])
 
 # ==============================================================================
-# 4. INTERFACE DO USUÁRIO (STREAMLIT UI)
+# 4. INTERFACE DO USUÁRIO (HUB AI)
 # ==============================================================================
 init_db()
-st.set_page_config(page_title="Hub de Simulados Groq AI", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="AI Simulado Expert", layout="wide", page_icon="🎯")
 
-st.sidebar.title("🚀 Menu Hub Groq")
-menu = st.sidebar.radio("Navegação", ["🏠 Home", "📁 Gerenciar Apostilas", "📝 Fazer Simulado"])
+st.sidebar.title("🚀 Menu Hub AI")
+menu = st.sidebar.radio("Navegação", ["🏠 Home", "🎯 Gerar Novo Simulado", "📜 Meus Simulados"])
 
 if menu == "🏠 Home":
-    st.title("⚡ Hub de Simulados Ultra-Rápido")
+    st.title("🎯 AI Simulado Expert")
     st.markdown("""
-    Bem-vindo ao seu centro de estudos alimentado por **Groq LPU**.
+    **O simulador de concursos mais rápido do mundo.**
     
-    **Vantagens desta versão:**
-    - Processamento quase instantâneo.
-    - Inteligência do Llama 3.3.
-    - Justificativas técnicas precisas.
+    Agora você não precisa mais de PDFs! Basta dizer qual concurso e matéria você quer estudar, 
+    e nossa IA gera questões inéditas e precisas baseadas no padrão das bancas.
+    
+    **Como começar:**
+    1. Vá em **Gerar Novo Simulado**.
+    2. Digite o nome do concurso e a matéria.
+    3. Escolha a quantidade de questões e comece a treinar!
     """)
     st.image("https://img.freepik.com/free-vector/online-library-concept-illustration_114360-3911.jpg", width=500)
 
-elif menu == "📁 Gerenciar Apostilas":
-    st.title("📁 Cadastro de Materiais")
-    uploaded_file = st.file_uploader("Subir Nova Apostila (PDF)", type="pdf")
+elif menu == "🎯 Gerar Novo Simulado":
+    st.title("🎯 Gerar Simulado Inteligente")
     
-    if uploaded_file and st.button("Processar e Salvar no Hub"):
-        with st.spinner("Groq está analisando o conteúdo e gerando questões..."):
-            try:
-                text = extract_text_from_pdf(uploaded_file)
-                questoes = ai_extract_questions(text, uploaded_file.name)
-                
-                if not questoes:
-                    st.error("A IA não conseguiu gerar questões para este arquivo. Tente outro PDF.")
-                else:
-                    apostila_id = save_apostila(uploaded_file.name)
-                    save_questoes(apostila_id, questoes)
-                    st.success(f"Sucesso! {len(questoes)} questões foram salvas no Hub.")
-            except Exception as e:
-                st.error(f"Erro ao processar: {e}")
-
-    st.divider()
-    st.subheader("Apostilas Cadastradas")
-    df_apostilas = get_apostilas_com_contagem()
-    if not df_apostilas.empty:
-        # Exibimos a tabela com a contagem de questões para diagnóstico
-        st.table(df_apostilas[['nome', 'total_questoes']].rename(columns={'nome': 'Apostila', 'total_questoes': 'Questões Disponíveis'}))
-    else:
-        st.info("Nenhuma apostila cadastrada.")
-
-elif menu == "📝 Fazer Simulado":
-    st.title("📝 Simulado de Conhecimentos")
-    df_apostilas = get_apostilas_com_contagem()
+    col1, col2 = st.columns(2)
+    with col1:
+        concurso = st.text_input("Nome do Concurso", placeholder="Ex: Banco do Brasil, PF, TJSP...")
+        materia = st.text_input("Matéria/Tópico", placeholder="Ex: Direito Constitucional, Português...")
+    with col2:
+        qtd = st.number_input("Quantidade de Questões", min_value=1, max_value=30, value=5)
     
-    if df_apostilas.empty:
-        st.warning("Cadastre materiais primeiro.")
-    else:
-        lista_nomes = df_apostilas['nome'].tolist()
-        escolha = st.selectbox("Selecione a apostila:", lista_nomes)
-        apostila_id = df_apostilas[df_apostilas['nome'] == escolha]['id'].values[0]
+    if st.button("Gerar Simulado Agora ⚡"):
+        if not concurso or not materia:
+            st.error("Por favor, preencha o concurso e a matéria.")
+        else:
+            with st.spinner(f"IA criando {qtd} questões de {materia} para {concurso}..."):
+                try:
+                    questoes = ai_generate_questions(concurso, materia, qtd)
+                    if questoes:
+                        simulado_id = save_simulado(concurso, materia)
+                        save_questoes(simulado_id, questoes)
+                        st.success("Simulado gerado com sucesso!")
+                        st.session_state.simulado_atual_id = simulado_id
+                        st.session_state.respostas_usuario = {}
+                        st.rerun()
+                    else:
+                        st.error("A IA não conseguiu gerar as questões. Tente mudar a matéria.")
+                except Exception as e:
+                    st.error(f"Erro técnico: {e}")
+
+    if 'simulado_atual_id' in st.session_state:
+        st.divider()
+        sim_id = st.session_state.simulado_atual_id
+        questoes = get_questoes(sim_id)
         
-        qtd_questoes = st.number_input("Quantas questões deseja no simulado?", min_value=1, value=10, step=1)
-        
-        if st.button("Iniciar Simulado"):
-            all_questions = get_questoes(apostila_id)
+        with st.form("simulado_form"):
+            for i, q in enumerate(questoes):
+                st.markdown(f"**Questão {i+1}**")
+                st.write(q['pergunta'])
+                st.session_state.respostas_usuario[i] = st.radio(f"Opção Q{i+1}:", options=q['opcoes'].keys(), key=f"q_{i}")
+                st.write("---")
             
-            if not all_questions:
-                st.error("Esta apostila não possui questões cadastradas no banco de dados. Tente subir o PDF novamente em 'Gerenciar Apostilas'.")
-            else:
-                random.shuffle(all_questions)
-                final_count = min(len(all_questions), qtd_questoes)
-                if final_count < qtd_questoes:
-                    st.warning(f"A apostila possui apenas {final_count} questões. Usaremos todas.")
-                
-                st.session_state.questoes_simulado = all_questions[:final_count]
-                st.session_state.respostas_usuario = {}
-                st.rerun()
-
-        if 'questoes_simulado' in st.session_state:
-            with st.form("simulado_form"):
-                for i, q in enumerate(st.session_state.questoes_simulado):
+            if st.form_submit_button("Finalizar e Ver Justificativas"):
+                st.divider()
+                st.header("✅ Resultado")
+                for i, q in enumerate(questoes):
+                    user_ans = st.session_state.respostas_usuario.get(i, "N/A")
+                    correct = q['correta']
+                    color = "green" if user_ans == correct else "red"
                     st.markdown(f"**Questão {i+1}**")
-                    st.write(q['pergunta'])
-                    resp = st.radio(f"Opção para Q{i+1}:", options=q['opcoes'].keys(), key=f"q_{i}")
-                    st.session_state.respostas_usuario[i] = resp
+                    st.markdown(f"Sua resposta: :{color}[{user_ans}] | Correta: :green[{correct}]")
+                    st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
                     st.write("---")
-                
-                submitted = st.form_submit_button("Finalizar e Ver Resultados")
-                
-                if submitted:
-                    st.divider()
-                    st.header("✅ Resultado do Simulado")
-                    for i, q in enumerate(st.session_state.questoes_simulado):
-                        user_ans = st.session_state.respostas_usuario.get(i, "Não respondida")
-                        correct_ans = q['correta']
-                        color = "green" if user_ans == correct_ans else "red"
-                        st.markdown(f"**Questão {i+1}**")
-                        st.markdown(f"Sua resposta: :{color}[{user_ans}] | Resposta correta: :green[{correct_ans}]")
-                        st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
-                        st.write("---")
+
+elif menu == "📜 Meus Simulados":
+    st.title("📜 Histórico de Simulados")
+    df = get_simulados()
+    
+    if df.empty:
+        st.info("Você ainda não gerou nenhum simulado.")
+    else:
+        # Criando uma lista de opções para o usuário escolher um simulado antigo
+        opcoes = df['id'].tolist()
+        nomes = [f"ID {id} - {row['concurso']} ({row['materia']}) - {row['data']}" for id, row in zip(df['id'], df.to_dict('records'))]
+        
+        escolha = st.selectbox("Escolha um simulado para revisar:", opcoes, format_func=lambda x: nomes[df[df['id']==x].index[0]])
+        
+        if st.button("Revisar Questões"):
+            questoes = get_questoes(escolha)
+            for i, q in enumerate(questoes):
+                st.markdown(f"**Questão {i+1}**")
+                st.write(q['pergunta'])
+                st.markdown(f"**Resposta Correta:** :green[{q['correta']}]")
+                st.markdown(f"**✅ Justificativa:** {q['justificativa']}")
+                st.write("---")
